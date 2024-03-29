@@ -1,0 +1,6 @@
+git+https://github.com/huggingface/transformers.git
+Pillow
+tensorflow
+torch
+torchvision
+torchaudio
