@@ -14,20 +14,10 @@ conda activate transform-depth
 ```
 ## Installation
 
-Once your environment is set up, install the necessary dependencies to ensure TransformDepth runs smoothly:
+To install the necessary dependencies for `TransformDepth`, ensure you have set up and activated your virtual environment as described in the Environment Setup section. Then, you can easily install all required packages by running the following command:
 
-```
-# Install Hugging Face's Transformers library directly from GitHub
-pip install git+https://github.com/huggingface/transformers.git
-
-# Install Pillow for image processing
-pip install Pillow
-
-# Install TensorFlow
-pip install tensorflow
-
-# Install PyTorch along with torchvision and torchaudio
-pip install torch torchvision torchaudio
+```bash
+pip install -r requirements.txt
 ```
 
 # Load the image
