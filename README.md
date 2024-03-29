@@ -4,6 +4,12 @@
 
 Dive into the world of depth estimation with the transformative power of state-of-the-art Transformer models. `TransformDepth` offers a streamlined approach to generate depth images from standard 2D pictures, leveraging the latest advancements in AI research.
 
+<p align="center">
+  <img src="transform-depth.jpg" alt="Original Image" width="48%"/>
+  <img src="depth-transform-depth.jpg" alt="Depth Image" width="48%"/>
+</p>
+
+
 ## Environment Setup
 
 To get started, you'll first need to create a virtual environment and activate it. Ensure you have [Conda](https://docs.conda.io/en/latest/) installed, then run the following commands:
@@ -41,3 +47,16 @@ Ensure you have an image ready for processing and execute the following command:
 python DepthEstimationPipeline.py
 ```
 This will generate a depth image based on your input, showcasing the capabilities of TransformDepth in transforming 2D images into their depth counterparts.
+
+## Citation
+
+[DepthAnything](https://github.com/LiheYoung/Depth-Anything?tab=readme-ov-file)
+
+```
+@inproceedings{depthanything,
+      title={Depth Anything: Unleashing the Power of Large-Scale Unlabeled Data}, 
+      author={Yang, Lihe and Kang, Bingyi and Huang, Zilong and Xu, Xiaogang and Feng, Jiashi and Zhao, Hengshuang},
+      booktitle={CVPR},
+      year={2024}
+}
+```
