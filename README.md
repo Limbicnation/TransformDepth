@@ -48,6 +48,37 @@ python DepthEstimationPipeline.py
 ```
 This will generate a depth image based on your input, showcasing the capabilities of TransformDepth in transforming 2D images into their depth counterparts.
 
+## Run the Python script for batch/single processing images with a specified output directory
+
+```python DepthEstimationPipeline.py --batch E:\path\to\your\images --output E:\images\batch
+```
+
+# This command runs the DepthEstimationPipeline.py script to process a single image located at "E:\images\single_image_path\single.png".
+
+# It specifies an output directory at "E:\output_path" where the processed image will be saved.
+
+```
+python DepthEstimationPipeline.py --single E:\images\single.webp --output E:\images --blur_radius 0.3 --median_size 3
+```
+# command line arguments
+
+```
+--single "Path to a single image file to process."
+--batch "Path to directory of images to process in batch."
+--output "Output directory for processed images"
+--blur_radius
+--median_size
+```
+
+# The Gaussian blur applied has a radius of 0.3, providing slight smoothing to reduce noise without significantly blurring the image details.
+# A median filter of size 3x3 is also applied, which helps further reduce noise and smooth out small artifacts in the image.
+# The command is ideal for refining depth estimations with minimal loss of detail in high-resolution or detailed images.
+
+
+```
+DepthEstimationPipeline.py --single E:\images\single_image_path  --output E:\output_path --blur_radius 0.3 --median_size 3
+```
+
 ## Citation
 
 [DepthAnything](https://github.com/LiheYoung/Depth-Anything?tab=readme-ov-file)
