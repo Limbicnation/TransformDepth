@@ -33,19 +33,30 @@ def process_image(image_path, output_path):
 parser = argparse.ArgumentParser(description="Process images for depth estimation.")
 parser.add_argument("--single", type=str, help="Path to a single image file to process.")
 parser.add_argument("--batch", type=str, help="Path to directory of images to process in batch.")
+parser.add_argument("--output", type=str, help="Output directory for processed images.")
 args = parser.parse_args()
+
+# Ensure the output directory exists
+if args.output and not os.path.exists(args.output):
+    os.makedirs(args.output)
 
 # Process based on the input arguments
 if args.single:
     # Process a single image
-    output_path = 'depth-' + os.path.basename(args.single)  # Naming the output file
+    if args.output:
+        output_path = os.path.join(args.output, 'depth-' + os.path.basename(args.single))
+    else:
+        output_path = 'depth-' + os.path.basename(args.single)
     process_image(args.single, output_path)
 elif args.batch:
     # Process all images in the directory
     for filename in os.listdir(args.batch):
         if filename.lower().endswith(('.png', '.jpg', '.jpeg')):  # Check for image files
             image_path = os.path.join(args.batch, filename)
-            output_path = os.path.join(args.batch, 'depth-' + filename)
+            if args.output:
+                output_path = os.path.join(args.output, 'depth-' + filename)
+            else:
+                output_path = os.path.join(args.batch, 'depth-' + filename)
             process_image(image_path, output_path)
 else:
     print("Please specify either --single <image_path> or --batch <directory_path> to process images.")
