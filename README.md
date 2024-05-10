@@ -48,6 +48,9 @@ python DepthEstimationPipeline.py
 ```
 This will generate a depth image based on your input, showcasing the capabilities of TransformDepth in transforming 2D images into their depth counterparts.
 
+# Run the Python script "Depth Estimation Pipeline" for batch processing images
+```python DepthEstimationPipeline.py --batch E:\path\to\your\images```
+
 ## Citation
 
 [DepthAnything](https://github.com/LiheYoung/Depth-Anything?tab=readme-ov-file)
