@@ -5,8 +5,8 @@
 Dive into the world of depth estimation with the transformative power of state-of-the-art Transformer models. `TransformDepth` offers a streamlined approach to generate depth images from standard 2D pictures, leveraging the latest advancements in AI research.
 
 <p align="center">
-  <img src="transform-depth.jpg" alt="Original Image" width="48%"/>
-  <img src="depth-transform-depth.jpg" alt="Depth Image" width="48%"/>
+  <img src="https://github.com/Limbicnation/TransformDepth/blob/main/images/transform-depth.jpg" alt="Original Image" width="48%"/>
+  <img src="https://github.com/Limbicnation/TransformDepth/blob/main/images/depth-transform-depth.jpg" alt="Depth Image" width="48%"/>
 </p>
 
 <p align="center">
@@ -58,6 +58,8 @@ This will generate a depth image based on your input, showcasing the capabilitie
 python DepthEstimationPipeline.py --batch ..\path\to\your\images --output ..\images\batch
 ```
 
+# Single Image Processing
+
 #### This command runs the DepthEstimationPipeline.py script to process a single image located at ```E:\images\single_image_path\single.png```.
 
 #### It specifies an output directory at ```E:\output_path``` where the processed image will be saved.
@@ -77,6 +79,8 @@ python DepthEstimationPipeline.py --single ..\images\single.webp --output ..\ima
 ```--blur_radius```  Radius for Gaussian Blur. Default is 4.0. Can accept float values.
 
 ```--median_size```  Size for Median Filter. Default is 5. Must be an integer.
+
+```--device```       Device to use for inference: 'cpu' or 'gpu'. Default is 'cpu'.
 
 
 #### The Gaussian blur applied has a radius of 0.3, providing slight smoothing to reduce noise without significantly blurring the image details.
