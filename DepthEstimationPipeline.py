@@ -10,9 +10,23 @@ def ensure_odd(value):
     value = int(value)
     return value if value % 2 == 1 else value + 1
 
+def convert_path(path):
+    """Convert path for compatibility between Windows and WSL."""
+    if os.name == 'nt':  # If running on Windows
+        return path.replace('\\', '/')
+    return path
+
 def process_image(image_path, output_path, blur_radius, median_size, device):
     # Ensure median_size is an odd integer
     median_size = ensure_odd(median_size)
+
+    # Convert paths for compatibility
+    image_path = convert_path(image_path)
+    output_path = convert_path(output_path)
+
+    # Check if the input image path exists
+    if not os.path.exists(image_path):
+        raise FileNotFoundError(f"The input image path does not exist: {image_path}")
 
     # Load the image
     image = Image.open(image_path)
@@ -55,6 +69,11 @@ def process_image(image_path, output_path, blur_radius, median_size, device):
 
     # Combine the blurred edges with the original depth image using the mask
     combined_image = Image.composite(blurred_edges, depth_image, mask)
+
+    # Check if the output directory exists and create it if necessary
+    output_dir = os.path.dirname(output_path)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
     # Save the final depth image
     combined_image.save(output_path)
