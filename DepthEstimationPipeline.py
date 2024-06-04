@@ -1,7 +1,7 @@
 import argparse
 import os
 from transformers import pipeline
-from PIL import Image, ImageFilter, ImageChops, ImageOps
+from PIL import Image, ImageFilter, ImageOps
 import numpy as np
 import torch
 
@@ -15,6 +15,20 @@ def convert_path(path):
     if os.name == 'nt':  # If running on Windows
         return path.replace('\\', '/')
     return path
+
+def gamma_correction(image, gamma=1.0):
+    """Apply gamma correction to the image."""
+    inv_gamma = 1.0 / gamma
+    table = [((i / 255.0) ** inv_gamma) * 255 for i in range(256)]
+    table = np.array(table, np.uint8)
+    return Image.fromarray(cv2.LUT(np.array(image), table))
+
+def auto_gamma_correction(image):
+    """Automatically adjust gamma correction for the image."""
+    image_array = np.array(image).astype(np.float32) / 255.0
+    mean_luminance = np.mean(image_array)
+    gamma = np.log(0.5) / np.log(mean_luminance)
+    return gamma_correction(image, gamma=gamma)
 
 def process_image(image_path, output_path, blur_radius, median_size, device):
     # Ensure median_size is an odd integer
@@ -31,8 +45,8 @@ def process_image(image_path, output_path, blur_radius, median_size, device):
     # Load the image
     image = Image.open(image_path)
 
-    # Load the pipeline for depth estimation
-    pipe = pipeline(task="depth-estimation", model="LiheYoung/depth-anything-small-hf", device=device)
+    # Load the pipeline for depth estimation with the larger model
+    pipe = pipeline(task="depth-estimation", model="LiheYoung/depth-anything-large-hf", device=device)
 
     # Perform depth estimation
     if device == 0:
@@ -57,9 +71,9 @@ def process_image(image_path, output_path, blur_radius, median_size, device):
     # Apply a median filter to reduce noise
     depth_image = depth_image.filter(ImageFilter.MedianFilter(size=median_size))
 
-    # Detect edges in the depth image with a higher threshold
+    # Enhanced edge detection
     edges = depth_image.filter(ImageFilter.FIND_EDGES)
-    edges = edges.point(lambda x: 255 if x > 100 else 0)  # Adjusted threshold
+    edges = edges.point(lambda x: 255 if x > 50 else 0)  # Adjusted threshold
 
     # Create a mask from the edges
     mask = edges.convert("L")
@@ -70,13 +84,19 @@ def process_image(image_path, output_path, blur_radius, median_size, device):
     # Combine the blurred edges with the original depth image using the mask
     combined_image = Image.composite(blurred_edges, depth_image, mask)
 
+    # Apply auto gamma correction
+    gamma_corrected_image = auto_gamma_correction(combined_image)
+
+    # Additional post-processing: Sharpen the final image
+    final_image = gamma_corrected_image.filter(ImageFilter.SHARPEN)
+
     # Check if the output directory exists and create it if necessary
     output_dir = os.path.dirname(output_path)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
     # Save the final depth image
-    combined_image.save(output_path)
+    final_image.save(output_path)
     print(f"Processed and saved: {output_path}")
 
 def main():
@@ -85,7 +105,7 @@ def main():
     parser.add_argument("--single", type=str, help="Path to a single image file to process.")
     parser.add_argument("--batch", type=str, help="Path to directory of images to process in batch.")
     parser.add_argument("--output", type=str, help="Output directory for processed images.")
-    parser.add_argument("--blur_radius", type=float, default=4.0, help="Radius for Gaussian Blur. Default is 4.0. Can accept float values.")
+    parser.add_argument("--blur_radius", type=float, default=2.0, help="Radius for Gaussian Blur. Default is 2.0. Can accept float values.")
     parser.add_argument("--median_size", type=int, default=5, help="Size for Median Filter. Default is 5. Must be an odd integer.")
     parser.add_argument("--device", type=str, choices=["cpu", "gpu"], default="cpu", help="Device to use for inference: 'cpu' or 'gpu'. Default is 'cpu'.")
     args = parser.parse_args()
