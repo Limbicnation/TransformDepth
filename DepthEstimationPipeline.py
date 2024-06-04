@@ -16,12 +16,12 @@ def convert_path(path):
         return path.replace('\\', '/')
     return path
 
-def gamma_correction(image, gamma=1.0):
+def gamma_correction(img, gamma=1.0):
     """Apply gamma correction to the image."""
     inv_gamma = 1.0 / gamma
     table = [((i / 255.0) ** inv_gamma) * 255 for i in range(256)]
     table = np.array(table, np.uint8)
-    return Image.fromarray(cv2.LUT(np.array(image), table))
+    return Image.fromarray(np.array(img).astype(np.uint8)).point(lambda i: table[i])
 
 def auto_gamma_correction(image):
     """Automatically adjust gamma correction for the image."""
@@ -29,6 +29,10 @@ def auto_gamma_correction(image):
     mean_luminance = np.mean(image_array)
     gamma = np.log(0.5) / np.log(mean_luminance)
     return gamma_correction(image, gamma=gamma)
+
+def auto_contrast(image):
+    """Apply automatic contrast adjustment to the image."""
+    return ImageOps.autocontrast(image)
 
 def process_image(image_path, output_path, blur_radius, median_size, device):
     # Ensure median_size is an odd integer
@@ -71,24 +75,28 @@ def process_image(image_path, output_path, blur_radius, median_size, device):
     # Apply a median filter to reduce noise
     depth_image = depth_image.filter(ImageFilter.MedianFilter(size=median_size))
 
-    # Enhanced edge detection
+    # Enhanced edge detection with more feathering
     edges = depth_image.filter(ImageFilter.FIND_EDGES)
-    edges = edges.point(lambda x: 255 if x > 50 else 0)  # Adjusted threshold
+    edges = edges.filter(ImageFilter.GaussianBlur(radius=2*blur_radius))
+    edges = edges.point(lambda x: 255 if x > 20 else 0)  # Adjusted threshold
 
     # Create a mask from the edges
     mask = edges.convert("L")
 
     # Blur only the edges using the mask
-    blurred_edges = depth_image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+    blurred_edges = depth_image.filter(ImageFilter.GaussianBlur(radius=blur_radius * 2))
 
     # Combine the blurred edges with the original depth image using the mask
     combined_image = Image.composite(blurred_edges, depth_image, mask)
 
-    # Apply auto gamma correction
-    gamma_corrected_image = auto_gamma_correction(combined_image)
+    # Apply auto gamma correction with a lower gamma to darken the image
+    gamma_corrected_image = gamma_correction(combined_image, gamma=0.7)
+
+    # Apply auto contrast
+    final_image = auto_contrast(gamma_corrected_image)
 
     # Additional post-processing: Sharpen the final image
-    final_image = gamma_corrected_image.filter(ImageFilter.SHARPEN)
+    final_image = final_image.filter(ImageFilter.SHARPEN)
 
     # Check if the output directory exists and create it if necessary
     output_dir = os.path.dirname(output_path)
