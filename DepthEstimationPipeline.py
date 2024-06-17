@@ -34,7 +34,7 @@ def auto_contrast(image):
     """Apply automatic contrast adjustment to the image."""
     return ImageOps.autocontrast(image)
 
-def process_image(image_path, output_path, blur_radius, median_size, device):
+def process_image(image_path, output_path, blur_radius, median_size, device, model_path, encoder):
     # Ensure median_size is an odd integer
     median_size = ensure_odd(median_size)
 
@@ -49,21 +49,18 @@ def process_image(image_path, output_path, blur_radius, median_size, device):
     # Load the image
     image = Image.open(image_path)
 
-    # Load the pipeline for depth estimation with the larger model
-    pipe = pipeline(task="depth-estimation", model="LiheYoung/depth-anything-large-hf", device=device)
+    # Load the Depth Anything V2 model
+    from depth_anything_v2.dpt import DepthAnythingV2
+    model = DepthAnythingV2(encoder=encoder, features=256, out_channels=[256, 512, 1024, 1024])
+    model.load_state_dict(torch.load(model_path, map_location='cpu'))
+    model.eval()
 
     # Perform depth estimation
-    if device == 0:
-        image = image.convert("RGB")  # Ensure image is in RGB format
-        inputs = pipe.feature_extractor(images=image, return_tensors="pt").to(device)
-        with torch.no_grad():
-            outputs = pipe.model(**inputs)
-        result = pipe.post_process(outputs, (image.height, image.width))
-    else:
-        result = pipe(image)
+    raw_img = np.array(image.convert("RGB"))
+    depth = model.infer_image(raw_img)  # HxW raw depth map
 
     # Convert depth data to a NumPy array if not already one
-    depth_data = np.array(result["depth"])
+    depth_data = np.array(depth)
 
     # Normalize and convert to uint8
     depth_normalized = (depth_data - depth_data.min()) / (depth_data.max() - depth_data.min() + 1e-8)  # Avoid zero division
@@ -77,7 +74,7 @@ def process_image(image_path, output_path, blur_radius, median_size, device):
 
     # Enhanced edge detection with more feathering
     edges = depth_image.filter(ImageFilter.FIND_EDGES)
-    edges = edges.filter(ImageFilter.GaussianBlur(radius=2*blur_radius))
+    edges = edges.filter(ImageFilter.GaussianBlur(radius=2 * blur_radius))
     edges = edges.point(lambda x: 255 if x > 20 else 0)  # Adjusted threshold
 
     # Create a mask from the edges
@@ -116,6 +113,8 @@ def main():
     parser.add_argument("--blur_radius", type=float, default=2.0, help="Radius for Gaussian Blur. Default is 2.0. Can accept float values.")
     parser.add_argument("--median_size", type=int, default=5, help="Size for Median Filter. Default is 5. Must be an odd integer.")
     parser.add_argument("--device", type=str, choices=["cpu", "gpu"], default="cpu", help="Device to use for inference: 'cpu' or 'gpu'. Default is 'cpu'.")
+    parser.add_argument("--model_path", type=str, required=True, help="Path to the Depth Anything V2 model checkpoint.")
+    parser.add_argument("--encoder", type=str, choices=["vits", "vitb", "vitl", "vitg"], default="vitl", help="Encoder type for the Depth Anything V2 model. Default is 'vitl'.")
     args = parser.parse_args()
 
     # Ensure the output directory exists
@@ -129,14 +128,14 @@ def main():
     if args.single:
         # Process a single image
         output_path = os.path.join(args.output, 'depth-' + os.path.basename(args.single))
-        process_image(args.single, output_path, args.blur_radius, args.median_size, device)
+        process_image(args.single, output_path, args.blur_radius, args.median_size, device, args.model_path, args.encoder)
     elif args.batch:
         # Process all images in the directory
         for filename in os.listdir(args.batch):
             if filename.lower().endswith(('.png', '.jpg', '.jpeg')):  # Check for image files
                 image_path = os.path.join(args.batch, filename)
                 output_path = os.path.join(args.output, 'depth-' + filename)
-                process_image(image_path, output_path, args.blur_radius, args.median_size, device)
+                process_image(image_path, output_path, args.blur_radius, args.median_size, device, args.model_path, args.encoder)
     else:
         print("Please specify either --single <image_path> or --batch <directory_path> to process images.")
 
