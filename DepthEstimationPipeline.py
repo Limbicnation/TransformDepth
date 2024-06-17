@@ -1,15 +1,17 @@
 import argparse
+import cv2
 import os
 from pathlib import Path
-from transformers import pipeline
 from PIL import Image, ImageFilter, ImageOps
 import numpy as np
 import torch
+import sys
 
-def ensure_odd(value):
-    """Ensure the value is an odd integer."""
-    value = int(value)
-    return value if value % 2 == 1 else value + 1
+# Add the Depth Anything V2 path
+sys.path.insert(0, '/mnt/TurboTux/AnacondaWorkspace/Github/TransformDepth/Depth-Anything-V2')
+
+# Import Depth Anything V2
+from depth_anything_v2.dpt import DepthAnythingV2
 
 def convert_path(path):
     """Convert path for compatibility between Windows and WSL."""
@@ -33,11 +35,8 @@ def auto_contrast(image):
     """Apply automatic contrast adjustment to the image."""
     return ImageOps.autocontrast(image)
 
-def process_image(image_path, output_path, blur_radius, median_size, device, model_path, encoder):
+def process_image(image_path, output_path, blur_radius, threshold, device, model_path, encoder, input_size):
     try:
-        # Ensure median_size is an odd integer
-        median_size = ensure_odd(median_size)
-
         # Convert paths for compatibility
         image_path = convert_path(image_path)
         output_path = convert_path(output_path)
@@ -49,15 +48,30 @@ def process_image(image_path, output_path, blur_radius, median_size, device, mod
         # Load the image
         image = Image.open(image_path)
 
+        # Resize image if input_size is specified
+        if input_size:
+            image = image.resize((input_size, input_size), Image.LANCZOS)
+
         # Load the Depth Anything V2 model
-        from depth_anything_v2.dpt import DepthAnythingV2
-        model = DepthAnythingV2(encoder=encoder, features=256, out_channels=[256, 512, 1024, 1024])
-        model.load_state_dict(torch.load(model_path, map_location='cpu'))
-        model.eval()
+        model_configs = {
+            'vits': {'encoder': 'vits', 'features': 64, 'out_channels': [48, 96, 192, 384]},
+            'vitb': {'encoder': 'vitb', 'features': 128, 'out_channels': [96, 192, 384, 768]},
+            'vitl': {'encoder': 'vitl', 'features': 256, 'out_channels': [256, 512, 1024, 1024]},
+            'vitg': {'encoder': 'vitg', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}
+        }
+
+        depth_anything = DepthAnythingV2(**model_configs[encoder])
+
+        # Verifying the model path before loading
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"The model checkpoint does not exist: {model_path}")
+
+        depth_anything.load_state_dict(torch.load(model_path, map_location='cpu'))
+        depth_anything = depth_anything.to(device).eval()
 
         # Perform depth estimation
         raw_img = np.array(image.convert("RGB"))
-        depth = model.infer_image(raw_img)  # HxW raw depth map
+        depth = depth_anything.infer_image(raw_img)  # HxW raw depth map
 
         # Convert depth data to a NumPy array if not already one
         depth_data = np.array(depth)
@@ -69,31 +83,22 @@ def process_image(image_path, output_path, blur_radius, median_size, device, mod
         # Create an image from the processed depth data
         depth_image = Image.fromarray(depth_uint8)
 
-        # Apply a median filter to reduce noise
-        depth_image = depth_image.filter(ImageFilter.MedianFilter(size=median_size))
-
         # Enhanced edge detection with more feathering
         edges = depth_image.filter(ImageFilter.FIND_EDGES)
-        edges = edges.filter(ImageFilter.GaussianBlur(radius=2 * blur_radius))
-        edges = edges.point(lambda x: 255 if x > 20 else 0)  # Adjusted threshold
+        edges = edges.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+        edges = edges.point(lambda x: 255 if x > threshold else 0)  # Adjusted threshold
 
         # Create a mask from the edges
         mask = edges.convert("L")
 
-        # Blur only the edges using the mask
-        blurred_edges = depth_image.filter(ImageFilter.GaussianBlur(radius=blur_radius * 2))
-
         # Combine the blurred edges with the original depth image using the mask
-        combined_image = Image.composite(blurred_edges, depth_image, mask)
+        combined_image = Image.composite(depth_image, depth_image.filter(ImageFilter.GaussianBlur(radius=blur_radius)), mask)
 
-        # Apply auto gamma correction with a lower gamma to darken the image
-        gamma_corrected_image = gamma_correction(combined_image, gamma=0.7)
+        # Apply auto gamma correction with a different gamma value to match the standard method
+        gamma_corrected_image = gamma_correction(combined_image, gamma=1.0)
 
-        # Apply auto contrast
+        # Apply auto contrast to match the standard method
         final_image = auto_contrast(gamma_corrected_image)
-
-        # Additional post-processing: Sharpen the final image
-        final_image = final_image.filter(ImageFilter.SHARPEN)
 
         # Ensure the output directory exists
         output_dir = Path(output_path).parent
@@ -105,24 +110,24 @@ def process_image(image_path, output_path, blur_radius, median_size, device, mod
     except Exception as e:
         print(f"Error processing image {image_path}: {e}")
 
-def process_images_in_batch(batch_path, output_dir, blur_radius, median_size, device, model_path, encoder):
+def process_images_in_batch(batch_path, output_dir, blur_radius, threshold, device, model_path, encoder, input_size):
     for filename in os.listdir(batch_path):
-        if filename.lower().endswith(('.png', '.jpg', '.jpeg')):  # Case-insensitive check
+        if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):  # Case-insensitive check
             image_path = os.path.join(batch_path, filename)
             output_path = os.path.join(output_dir, 'depth-' + filename)
-            process_image(image_path, output_path, blur_radius, median_size, device, model_path, encoder)
+            process_image(image_path, output_path, blur_radius, threshold, device, model_path, encoder, input_size)
 
 def main():
-    # Setup command line argument parsing
     parser = argparse.ArgumentParser(description="Process images for depth estimation.")
     parser.add_argument("--single", type=str, help="Path to a single image file to process.")
     parser.add_argument("--batch", type=str, help="Path to directory of images to process in batch.")
     parser.add_argument("--output", type=str, help="Output directory for processed images.")
-    parser.add_argument("--blur_radius", type=float, default=2.0, help="Radius for Gaussian Blur. Default is 2.0. Can accept float values.")
-    parser.add_argument("--median_size", type=int, default=5, help="Size for Median Filter. Default is 5. Must be an odd integer.")
+    parser.add_argument("--blur_radius", type=float, default=1.0, help="Radius for Gaussian Blur. Default is 1.0. Can accept float values.")
+    parser.add_argument("--threshold", type=int, default=20, help="Threshold for edge detection. Default is 20.")
     parser.add_argument("--device", type=str, choices=["cpu", "gpu"], default="cpu", help="Device to use for inference: 'cpu' or 'gpu'. Default is 'cpu'.")
     parser.add_argument("--model_path", type=str, required=True, help="Path to the Depth Anything V2 model checkpoint.")
     parser.add_argument("--encoder", type=str, choices=["vits", "vitb", "vitl", "vitg"], default="vitl", help="Encoder type for the Depth Anything V2 model. Default is 'vitl'.")
+    parser.add_argument("--input_size", type=int, help="Resize input images to this size before processing.")
     args = parser.parse_args()
 
     output_dir = Path(args.output)
@@ -132,9 +137,9 @@ def main():
 
     if args.single:
         output_path = output_dir / ('depth-' + Path(args.single).name)
-        process_image(args.single, str(output_path), args.blur_radius, args.median_size, device, args.model_path, args.encoder)
+        process_image(args.single, str(output_path), args.blur_radius, args.threshold, device, args.model_path, args.encoder, args.input_size)
     elif args.batch:
-        process_images_in_batch(args.batch, str(output_dir), args.blur_radius, args.median_size, device, args.model_path, args.encoder)
+        process_images_in_batch(args.batch, str(output_dir), args.blur_radius, args.threshold, device, args.model_path, args.encoder, args.input_size)
     else:
         print("Please specify either --single <image_path> or --batch <directory_path> to process images.")
 
