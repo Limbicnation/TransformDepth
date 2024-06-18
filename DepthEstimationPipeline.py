@@ -35,7 +35,7 @@ def auto_contrast(image):
     """Apply automatic contrast adjustment to the image."""
     return ImageOps.autocontrast(image)
 
-def process_image(image_path, output_path, blur_radius, threshold, device, model_path, encoder, input_size):
+def process_image(image_path, output_path, device, model_path, encoder, input_size):
     try:
         # Convert paths for compatibility
         image_path = convert_path(image_path)
@@ -83,19 +83,8 @@ def process_image(image_path, output_path, blur_radius, threshold, device, model
         # Create an image from the processed depth data
         depth_image = Image.fromarray(depth_uint8)
 
-        # Enhanced edge detection with more feathering
-        edges = depth_image.filter(ImageFilter.FIND_EDGES)
-        edges = edges.filter(ImageFilter.GaussianBlur(radius=blur_radius))
-        edges = edges.point(lambda x: 255 if x > threshold else 0)  # Adjusted threshold
-
-        # Create a mask from the edges
-        mask = edges.convert("L")
-
-        # Combine the blurred edges with the original depth image using the mask
-        combined_image = Image.composite(depth_image, depth_image.filter(ImageFilter.GaussianBlur(radius=blur_radius)), mask)
-
         # Apply auto gamma correction with a different gamma value to match the standard method
-        gamma_corrected_image = gamma_correction(combined_image, gamma=1.0)
+        gamma_corrected_image = gamma_correction(depth_image, gamma=1.0)
 
         # Apply auto contrast to match the standard method
         final_image = auto_contrast(gamma_corrected_image)
@@ -104,26 +93,24 @@ def process_image(image_path, output_path, blur_radius, threshold, device, model
         output_dir = Path(output_path).parent
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save the final depth image
-        final_image.save(output_path)
+        # Save the final depth image as PNG to avoid artifacts and banding
+        final_image.save(output_path, format="PNG")
         print(f"Processed and saved: {output_path}")
     except Exception as e:
         print(f"Error processing image {image_path}: {e}")
 
-def process_images_in_batch(batch_path, output_dir, blur_radius, threshold, device, model_path, encoder, input_size):
+def process_images_in_batch(batch_path, output_dir, device, model_path, encoder, input_size):
     for filename in os.listdir(batch_path):
         if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):  # Case-insensitive check
             image_path = os.path.join(batch_path, filename)
-            output_path = os.path.join(output_dir, 'depth-' + filename)
-            process_image(image_path, output_path, blur_radius, threshold, device, model_path, encoder, input_size)
+            output_path = os.path.join(output_dir, 'depth-' + os.path.splitext(filename)[0] + '.png')
+            process_image(image_path, output_path, device, model_path, encoder, input_size)
 
 def main():
     parser = argparse.ArgumentParser(description="Process images for depth estimation.")
     parser.add_argument("--single", type=str, help="Path to a single image file to process.")
     parser.add_argument("--batch", type=str, help="Path to directory of images to process in batch.")
     parser.add_argument("--output", type=str, help="Output directory for processed images.")
-    parser.add_argument("--blur_radius", type=float, default=1.0, help="Radius for Gaussian Blur. Default is 1.0. Can accept float values.")
-    parser.add_argument("--threshold", type=int, default=20, help="Threshold for edge detection. Default is 20.")
     parser.add_argument("--device", type=str, choices=["cpu", "gpu"], default="cpu", help="Device to use for inference: 'cpu' or 'gpu'. Default is 'cpu'.")
     parser.add_argument("--model_path", type=str, required=True, help="Path to the Depth Anything V2 model checkpoint.")
     parser.add_argument("--encoder", type=str, choices=["vits", "vitb", "vitl", "vitg"], default="vitl", help="Encoder type for the Depth Anything V2 model. Default is 'vitl'.")
@@ -136,10 +123,10 @@ def main():
     device = "cuda" if args.device == "gpu" and torch.cuda.is_available() else "cpu"
 
     if args.single:
-        output_path = output_dir / ('depth-' + Path(args.single).name)
-        process_image(args.single, str(output_path), args.blur_radius, args.threshold, device, args.model_path, args.encoder, args.input_size)
+        output_path = output_dir / ('depth-' + Path(args.single).stem + '.png')
+        process_image(args.single, str(output_path), device, args.model_path, args.encoder, args.input_size)
     elif args.batch:
-        process_images_in_batch(args.batch, str(output_dir), args.blur_radius, args.threshold, device, args.model_path, args.encoder, args.input_size)
+        process_images_in_batch(args.batch, str(output_dir), device, args.model_path, args.encoder, args.input_size)
     else:
         print("Please specify either --single <image_path> or --batch <directory_path> to process images.")
 

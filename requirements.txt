@@ -10,7 +10,7 @@ gradio==4.36.0
 opencv-python
 matplotlib
 huggingface_hub
-xformers
+
 
 # Depth Anything V2 requirements
 aiofiles==23.2.1
