@@ -13,6 +13,11 @@ sys.path.insert(0, '/mnt/TurboTux/AnacondaWorkspace/Github/TransformDepth/Depth-
 # Import Depth Anything V2
 from depth_anything_v2.dpt import DepthAnythingV2
 
+def ensure_odd(value):
+    """Ensure the value is an odd integer."""
+    value = int(value)
+    return value if value % 2 == 1 else value + 1
+
 def convert_path(path):
     """Convert path for compatibility between Windows and WSL."""
     return path.replace('\\', '/') if os.name == 'nt' else path
@@ -35,6 +40,11 @@ def auto_contrast(image):
     """Apply automatic contrast adjustment to the image."""
     return ImageOps.autocontrast(image)
 
+def resize_image(image, size):
+    """Resize the image while retaining its aspect ratio."""
+    image.thumbnail((size, size), Image.LANCZOS)
+    return image
+
 def process_image(image_path, output_path, device, model_path, encoder, input_size):
     try:
         # Convert paths for compatibility
@@ -50,7 +60,7 @@ def process_image(image_path, output_path, device, model_path, encoder, input_si
 
         # Resize image if input_size is specified
         if input_size:
-            image = image.resize((input_size, input_size), Image.LANCZOS)
+            image = resize_image(image, input_size)
 
         # Load the Depth Anything V2 model
         model_configs = {
@@ -93,8 +103,9 @@ def process_image(image_path, output_path, device, model_path, encoder, input_si
         output_dir = Path(output_path).parent
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save the final depth image as PNG to avoid artifacts and banding
-        final_image.save(output_path, format="PNG")
+        # Save the final depth image as PNG, overwriting if exists
+        output_path = output_path if output_path.lower().endswith('.png') else output_path + '.png'
+        final_image.save(output_path, format='PNG')
         print(f"Processed and saved: {output_path}")
     except Exception as e:
         print(f"Error processing image {image_path}: {e}")
@@ -103,8 +114,8 @@ def process_images_in_batch(batch_path, output_dir, device, model_path, encoder,
     for filename in os.listdir(batch_path):
         if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):  # Case-insensitive check
             image_path = os.path.join(batch_path, filename)
-            output_path = os.path.join(output_dir, 'depth-' + os.path.splitext(filename)[0] + '.png')
-            process_image(image_path, output_path, device, model_path, encoder, input_size)
+            output_filename = os.path.join(output_dir, os.path.splitext(os.path.basename(filename))[0] + '.png')
+            process_image(image_path, output_filename, device, model_path, encoder, input_size)
 
 def main():
     parser = argparse.ArgumentParser(description="Process images for depth estimation.")
@@ -123,8 +134,8 @@ def main():
     device = "cuda" if args.device == "gpu" and torch.cuda.is_available() else "cpu"
 
     if args.single:
-        output_path = output_dir / ('depth-' + Path(args.single).stem + '.png')
-        process_image(args.single, str(output_path), device, args.model_path, args.encoder, args.input_size)
+        output_filename = os.path.join(output_dir, os.path.splitext(os.path.basename(args.single))[0] + '.png')
+        process_image(args.single, str(output_filename), device, args.model_path, args.encoder, args.input_size)
     elif args.batch:
         process_images_in_batch(args.batch, str(output_dir), device, args.model_path, args.encoder, args.input_size)
     else:
