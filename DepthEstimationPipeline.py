@@ -1,142 +1,170 @@
+# file path: DepthEstimationPipeline.py
 import argparse
 import os
-from transformers import pipeline
-from PIL import Image, ImageFilter, ImageOps
-import numpy as np
 import torch
+import numpy as np
+from PIL import Image, ImageFilter, ImageOps
+from transformers import pipeline, AutoImageProcessor, AutoModelForDepthEstimation
+import cv2
 
-def ensure_odd(value):
-    """Ensure the value is an odd integer."""
-    value = int(value)
-    return value if value % 2 == 1 else value + 1
+# Constants
+MAX_PIXEL_VALUE = 255
+EPSILON = 1e-8
 
-def convert_path(path):
-    """Convert path for compatibility between Windows and WSL."""
-    if os.name == 'nt':  # If running on Windows
-        return path.replace('\\', '/')
-    return path
-
-def gamma_correction(img, gamma=1.0):
+def gamma_correction(img: Image.Image, gamma: float) -> Image.Image:
     """Apply gamma correction to the image."""
+    if gamma <= 0:
+        raise ValueError("Gamma value must be greater than zero.")
+    
     inv_gamma = 1.0 / gamma
-    table = [((i / 255.0) ** inv_gamma) * 255 for i in range(256)]
-    table = np.array(table, np.uint8)
-    return Image.fromarray(np.array(img).astype(np.uint8)).point(lambda i: table[i])
+    max_pixel_value = 65535 if img.mode == "I;16" else 255
+    table = [(i / max_pixel_value) ** inv_gamma * max_pixel_value for i in range(max_pixel_value + 1)]
+    table = np.array(table, dtype=np.uint16 if max_pixel_value == 65535 else np.uint8)
+    
+    if img.mode == "I;16":
+        img = img.point(lambda i: table[i], 'I;16')
+    else:
+        img = img.point(lambda i: table[i])
+    
+    return img
 
-def auto_gamma_correction(image):
+def auto_gamma_correction(image: Image.Image, gamma: float) -> Image.Image:
     """Automatically adjust gamma correction for the image."""
-    image_array = np.array(image).astype(np.float32) / 255.0
-    mean_luminance = np.mean(image_array)
-    gamma = np.log(0.5) / np.log(mean_luminance)
     return gamma_correction(image, gamma=gamma)
 
-def auto_contrast(image):
-    """Apply automatic contrast adjustment to the image."""
-    return ImageOps.autocontrast(image)
+def ensure_odd(value: int) -> int:
+    """Ensure the value is an odd integer."""
+    return value if value % 2 != 0 else value + 1
 
-def process_image(image_path, output_path, blur_radius, median_size, device):
-    # Ensure median_size is an odd integer
+def convert_path(path: str) -> str:
+    """Convert paths for compatibility."""
+    return os.path.normpath(path)
+
+def load_image(image_path: str) -> Image.Image:
+    """Load an image from the given path using PIL."""
+    if not os.path.exists(image_path):
+        raise FileNotFoundError(f"The input image path does not exist: {image_path}")
+    return Image.open(image_path)
+
+def process_depth_data(depth_data: np.ndarray) -> Image.Image:
+    """Normalize and convert depth data to an image."""
+    depth_min = depth_data.min()
+    depth_max = depth_data.max()
+    print(f"Depth Min: {depth_min}, Depth Max: {depth_max}")  # Debug print
+
+    depth_normalized = (depth_data - depth_min) / (depth_max - depth_min + EPSILON)
+    depth_uint8 = (MAX_PIXEL_VALUE * depth_normalized).astype(np.uint8)
+    depth_uint8 = cv2.equalizeHist(depth_uint8)
+    return Image.fromarray(depth_uint8)
+
+def apply_median_filter(image: Image.Image, size: int) -> Image.Image:
+    """Apply a median filter to the image."""
+    return image.filter(ImageFilter.MedianFilter(size=size))
+
+def detect_edges(image: Image.Image) -> Image.Image:
+    """Detect edges in the image."""
+    return image.filter(ImageFilter.CONTOUR)  # Use CONTOUR instead of FIND_EDGES for smoother edges
+
+def process_image(image_path: str, output_path: str, blur_radius: float, median_size: int, flag: bool, no_post_processing: bool, apply_gamma: bool, gamma_value: float):
+    """Process the image and save the output."""
     median_size = ensure_odd(median_size)
 
-    # Convert paths for compatibility
     image_path = convert_path(image_path)
     output_path = convert_path(output_path)
 
-    # Check if the input image path exists
-    if not os.path.exists(image_path):
-        raise FileNotFoundError(f"The input image path does not exist: {image_path}")
-
     # Load the image
-    image = Image.open(image_path)
+    raw_img = load_image(image_path)
 
-    # Load the pipeline for depth estimation with the larger model
-    pipe = pipeline(task="depth-estimation", model="LiheYoung/depth-anything-large-hf", device=device)
+    # Using transformers pipeline for Depth-Anything-V2-Small
+    print("Using transformers pipeline for depth estimation.")
+    image_processor = AutoImageProcessor.from_pretrained("depth-anything/Depth-Anything-V2-Small-hf")
+    model = AutoModelForDepthEstimation.from_pretrained("depth-anything/Depth-Anything-V2-Small-hf")
 
-    # Perform depth estimation
-    if device == 0:
-        image = image.convert("RGB")  # Ensure image is in RGB format
-        inputs = pipe.feature_extractor(images=image, return_tensors="pt").to(device)
-        with torch.no_grad():
-            outputs = pipe.model(**inputs)
-        result = pipe.post_process(outputs, (image.height, image.width))
+    # Prepare the image for the model
+    inputs = image_processor(images=raw_img, return_tensors="pt")
+    
+    with torch.no_grad():
+        outputs = model(**inputs)
+        predicted_depth = outputs.predicted_depth
+
+    # Interpolate to original size
+    prediction = torch.nn.functional.interpolate(
+        predicted_depth.unsqueeze(1),
+        size=raw_img.size[::-1],
+        mode="bicubic",
+        align_corners=False,
+    )
+
+    # Visualize the prediction
+    depth_array = prediction.squeeze().cpu().numpy()
+    formatted = (depth_array * 255 / np.max(depth_array)).astype("uint8")
+    depth_image = Image.fromarray(formatted)
+
+    # Apply gamma correction if specified
+    if apply_gamma:
+        depth_image = auto_gamma_correction(depth_image, gamma_value)
+
+    # Apply post-processing filters only if no_post_processing is False
+    if not no_post_processing:
+        # Apply median filter
+        depth_image = apply_median_filter(depth_image, median_size)
+
+        # Apply Gaussian blur
+        depth_image = depth_image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
+        # Detect edges
+        edges = detect_edges(depth_image)
+
+        # Convert both images to NumPy arrays for blending
+        depth_array = np.array(depth_image)
+        edges_array = np.array(edges)
+
+        # Ensure both arrays are of the same dtype
+        if depth_array.dtype != edges_array.dtype:
+            edges_array = edges_array.astype(depth_array.dtype)
+
+        # Apply add operation to combine the depth image and edges
+        combined_array = np.clip((depth_array * 0.8 + edges_array * 0.2), 0, MAX_PIXEL_VALUE)
+
+        # Convert back to PIL Image
+        combined_image = Image.fromarray(combined_array.astype(np.uint8))
+
+        # Set the final image to the combined image
+        edges = combined_image
     else:
-        result = pipe(image)
+        edges = depth_image
 
-    # Convert depth data to a NumPy array if not already one
-    depth_data = np.array(result["depth"])
-
-    # Normalize and convert to uint8
-    depth_normalized = (depth_data - depth_data.min()) / (depth_data.max() - depth_data.min() + 1e-8)  # Avoid zero division
-    depth_uint8 = (255 * depth_normalized).astype(np.uint8)
-
-    # Create an image from the processed depth data
-    depth_image = Image.fromarray(depth_uint8)
-
-    # Apply a median filter to reduce noise
-    depth_image = depth_image.filter(ImageFilter.MedianFilter(size=median_size))
-
-    # Enhanced edge detection with more feathering
-    edges = depth_image.filter(ImageFilter.FIND_EDGES)
-    edges = edges.filter(ImageFilter.GaussianBlur(radius=2*blur_radius))
-    edges = edges.point(lambda x: 255 if x > 20 else 0)  # Adjusted threshold
-
-    # Create a mask from the edges
-    mask = edges.convert("L")
-
-    # Blur only the edges using the mask
-    blurred_edges = depth_image.filter(ImageFilter.GaussianBlur(radius=blur_radius * 2))
-
-    # Combine the blurred edges with the original depth image using the mask
-    combined_image = Image.composite(blurred_edges, depth_image, mask)
-
-    # Apply auto gamma correction with a lower gamma to darken the image
-    gamma_corrected_image = gamma_correction(combined_image, gamma=0.7)
-
-    # Apply auto contrast
-    final_image = auto_contrast(gamma_corrected_image)
-
-    # Additional post-processing: Sharpen the final image
-    final_image = final_image.filter(ImageFilter.SHARPEN)
-
-    # Check if the output directory exists and create it if necessary
-    output_dir = os.path.dirname(output_path)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    # Save the final depth image
-    final_image.save(output_path)
+    # Save the processed image with max bit depth for PNG
+    edges.save(output_path, format="PNG", bits=16 if depth_image.mode == "I;16" else 8)
     print(f"Processed and saved: {output_path}")
 
 def main():
-    # Setup command line argument parsing
+    """Main function to parse arguments and process images."""
     parser = argparse.ArgumentParser(description="Process images for depth estimation.")
     parser.add_argument("--single", type=str, help="Path to a single image file to process.")
     parser.add_argument("--batch", type=str, help="Path to directory of images to process in batch.")
-    parser.add_argument("--output", type=str, help="Output directory for processed images.")
+    parser.add_argument("--output", type=str, required=True, help="Output directory for processed images.")
     parser.add_argument("--blur_radius", type=float, default=2.0, help="Radius for Gaussian Blur. Default is 2.0. Can accept float values.")
     parser.add_argument("--median_size", type=int, default=5, help="Size for Median Filter. Default is 5. Must be an odd integer.")
-    parser.add_argument("--device", type=str, choices=["cpu", "gpu"], default="cpu", help="Device to use for inference: 'cpu' or 'gpu'. Default is 'cpu'.")
+    parser.add_argument("--depth-anything-v2-small", action='store_true', help="Flag to use Depth-Anything-V2-Small model.")
+    parser.add_argument("--flag", action='store_true', help="A flag to trigger additional processing options.")
+    parser.add_argument("--no-post-processing", action='store_true', help="Disable post-processing effects.")
+    parser.add_argument("--apply-gamma", action='store_true', help="Apply gamma correction to the output.")
+    parser.add_argument("--gamma-value", type=float, default=1.0, help="Gamma value for correction. Default is 1.0 (no correction).")
     args = parser.parse_args()
 
-    # Ensure the output directory exists
-    if args.output and not os.path.exists(args.output):
-        os.makedirs(args.output)
+    if not args.depth_anything_v2_small:
+        raise ValueError("The --depth-anything-v2-small flag is required to use the small model version.")
 
-    # Determine the device (GPU or CPU)
-    device = 0 if args.device == "gpu" and torch.cuda.is_available() else -1
-
-    # Process based on the input arguments
     if args.single:
-        # Process a single image
         output_path = os.path.join(args.output, 'depth-' + os.path.basename(args.single))
-        process_image(args.single, output_path, args.blur_radius, args.median_size, device)
+        process_image(args.single, output_path, args.blur_radius, args.median_size, args.flag, args.no_post_processing, args.apply_gamma, args.gamma_value)
     elif args.batch:
-        # Process all images in the directory
         for filename in os.listdir(args.batch):
             if filename.lower().endswith(('.png', '.jpg', '.jpeg')):  # Check for image files
                 image_path = os.path.join(args.batch, filename)
                 output_path = os.path.join(args.output, 'depth-' + filename)
-                process_image(image_path, output_path, args.blur_radius, args.median_size, device)
+                process_image(image_path, output_path, args.blur_radius, args.median_size, args.flag, args.no_post_processing, args.apply_gamma, args.gamma_value)
     else:
         print("Please specify either --single <image_path> or --batch <directory_path> to process images.")
 
