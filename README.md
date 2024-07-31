@@ -2,7 +2,7 @@
 
 ---
 
-## TransformDepth 🔄
+## TransformDepth V2 🔄
 
 **TransformDepth: Unleashing the Power of Transformers for Depth Estimation**
 
@@ -16,6 +16,11 @@ Dive into the world of depth estimation with the transformative power of state-o
 <p align="center">
   <img src="https://github.com/Limbicnation/TransformDepth/blob/main/images/single.webp" alt="Original Image" width="48%"/>
   <img src="https://github.com/Limbicnation/TransformDepth/blob/main/images/depth-single.webp" alt="Depth Image" width="48%"/>
+</p>
+
+<p align="center">
+  <img src="https://github.com/Limbicnation/TransformDepth/blob/main/images/resized_face_analysis_model.webp" alt="Original Image" width="48%"/> 
+  <img src="https://github.com/Limbicnation/TransformDepth/blob/main/images/depth-resized_face_analysis_model.png" alt="Depth Image" width="48%"/>
 </p>
 
 ## Environment Setup ✨
