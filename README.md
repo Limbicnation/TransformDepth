@@ -109,15 +109,21 @@ DepthEstimationPipeline.py --single images/resized_face_analysis_model.png --out
 
 ## Citation
 
-[DepthAnything](https://github.com/LiheYoung/Depth-Anything?tab=readme-ov-file)
+[DepthAnything](https://github.com/LiheYoung/Depth-Anything?tab=readme-ov-file) [DepthAnythingV2](https://github.com/DepthAnything/Depth-Anything-V2)
 
 ```
-@inproceedings{depthanything,
-      title={Depth Anything: Unleashing the Power of Large-Scale Unlabeled Data}, 
-      author={Yang, Lihe and Kang, Bingyi and Huang, Zilong and Xu, Xiaogang and Feng, Jiashi and Zhao, Hengshuang},
-      booktitle={CVPR},
-      year={2024}
+@article{depth_anything_v2,
+  title={Depth Anything V2},
+  author={Yang, Lihe and Kang, Bingyi and Huang, Zilong and Zhao, Zhen and Xu, Xiaogang and Feng, Jiashi and Zhao, Hengshuang},
+  journal={arXiv:2406.09414},
+  year={2024}
+}
+
+@inproceedings{depth_anything_v1,
+  title={Depth Anything: Unleashing the Power of Large-Scale Unlabeled Data}, 
+  author={Yang, Lihe and Kang, Bingyi and Huang, Zilong and Xu, Xiaogang and Feng, Jiashi and Zhao, Hengshuang},
+  booktitle={CVPR},
+  year={2024}
 }
 ```
 
----
