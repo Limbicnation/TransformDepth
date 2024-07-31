@@ -86,14 +86,18 @@ It specifies an output directory at `..\images` where the processed image will b
 python DepthEstimationPipeline.py --single ..\images\single.webp --output ..\images --blur_radius 0.3 --median_size 3
 ```
 
-## Command Line Arguments
+  ## Command Line Arguments
 
 - `--single`: Path to a single image file to process.
 - `--batch`: Path to directory of images to process in batch.
-- `--output`: Output directory for processed images.
-- `--blur_radius`: Radius for Gaussian Blur. Default is 4.0. Can accept float values.
-- `--median_size`: Size for Median Filter. Default is 5. Must be an integer.
-- `--device`: Device to use for inference: 'cpu' or 'gpu'. Default is 'cpu'.
+- `--output`: Output directory for processed images (required).
+- `--blur_radius`: Radius for Gaussian Blur. Default is 2.0. Can accept float values.
+- `--median_size`: Size for Median Filter. Default is 5. Must be an odd integer.
+- `--depth-anything-v2-small`: Flag to use the Depth-Anything-V2-Small model.
+- `--flag`: A flag to trigger additional processing options.
+- `--no-post-processing`: Disable post-processing effects.
+- `--apply-gamma`: Apply gamma correction to the output.
+- `--gamma-value`: Gamma value for correction. Default is 1.0 (no correction).
 
 ### Example Command with Post-Processing
 
