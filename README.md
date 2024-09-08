@@ -104,7 +104,7 @@ python DepthEstimationPipeline.py --single ..\images\single.webp --output ..\ima
 The Gaussian blur applied has a radius of 0.3, providing slight smoothing to reduce noise without significantly blurring the image details. A median filter of size 3x3 is also applied, which helps further reduce noise and smooth out small artifacts in the image. The command is ideal for refining depth estimations with minimal loss of detail in high-resolution or detailed images.
 
 ```
-DepthEstimationPipeline.py --single images/resized_face_analysis_model.png --output . --depth-anything-v2-small --blur_radius 1 --median_size 3 --apply-gamma --gamma-value 1.5
+python DepthEstimationPipeline.py --single images/resized_face_analysis_model.png --output . --depth-anything-v2-small --blur_radius 1 --median_size 3 --apply-gamma --gamma-value 1.5
 ```
 
 ## Citation
