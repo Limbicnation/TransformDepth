@@ -75,6 +75,83 @@ def process_image(image_path: str, output_path: str, blur_radius: float, median_
     # Load the image
     raw_img = load_image(image_path)
 
+    # Convert image to RGB format to ensure compatibility with transformers pipeline
+    raw_img = raw_img.convert("RGB")
+    
+    # Optionally convert to NumPy array (if needed)
+    raw_img_np = np.array(raw_img)  # Convert to NumPy array in HWC format
+
+    # Using transformers pipeline for Depth-Anything-V2-Small
+    print("Using transformers pipeline for depth estimation.")
+    image_processor = AutoImageProcessor.from_pretrained("depth-anything/Depth-Anything-V2-Small-hf", channel_axis=-1)
+    model = AutoModelForDepthEstimation.from_pretrained("depth-anything/Depth-Anything-V2-Small-hf")
+
+    # Prepare the image for the model
+    inputs = image_processor(images=raw_img_np, return_tensors="pt")  # Pass the NumPy array
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+        predicted_depth = outputs.predicted_depth
+
+    # Interpolate to original size
+    prediction = torch.nn.functional.interpolate(
+        predicted_depth.unsqueeze(1),
+        size=raw_img.size[::-1],
+        mode="bicubic",
+        align_corners=False,
+    )
+
+    # Visualize the prediction
+    depth_array = prediction.squeeze().cpu().numpy()
+    formatted = (depth_array * 255 / np.max(depth_array)).astype("uint8")
+    depth_image = Image.fromarray(formatted)
+
+    # Apply gamma correction if specified
+    if apply_gamma:
+        depth_image = auto_gamma_correction(depth_image, gamma_value)
+
+    # Apply post-processing filters only if no_post_processing is False
+    if not no_post_processing:
+        # Apply median filter
+        depth_image = apply_median_filter(depth_image, median_size)
+
+        # Apply Gaussian blur
+        depth_image = depth_image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
+        # Detect edges
+        edges = detect_edges(depth_image)
+
+        # Convert both images to NumPy arrays for blending
+        depth_array = np.array(depth_image)
+        edges_array = np.array(edges)
+
+        # Ensure both arrays are of the same dtype
+        if depth_array.dtype != edges_array.dtype:
+            edges_array = edges_array.astype(depth_array.dtype)
+
+        # Apply add operation to combine the depth image and edges
+        combined_array = np.clip((depth_array * 0.8 + edges_array * 0.2), 0, MAX_PIXEL_VALUE)
+
+        # Convert back to PIL Image
+        combined_image = Image.fromarray(combined_array.astype(np.uint8))
+
+        # Set the final image to the combined image
+        edges = combined_image
+    else:
+        edges = depth_image
+
+    # Save the processed image with max bit depth for PNG
+    edges.save(output_path, format="PNG", bits=16 if depth_image.mode == "I;16" else 8)
+    print(f"Processed and saved: {output_path}")
+
+    median_size = ensure_odd(median_size)
+
+    image_path = convert_path(image_path)
+    output_path = convert_path(output_path)
+
+    # Load the image
+    raw_img = load_image(image_path)
+
     # Using transformers pipeline for Depth-Anything-V2-Small
     print("Using transformers pipeline for depth estimation.")
     image_processor = AutoImageProcessor.from_pretrained("depth-anything/Depth-Anything-V2-Small-hf")
